@@ -23,9 +23,29 @@
 #include "log.h"
 #include "usb_key.pio.h"
 
+#if FM1T_BOARD_DEBUGPROBE
+// Debug Probe: red, green and yellow LEDs, lit high (yellow stands in for blue).
+#define LED_R 2
+#define LED_G 15
+#define LED_B 16
+#define LED_ON 1
+#else
 #define LED_R 17
 #define LED_G 16
 #define LED_B 25
+#define LED_ON 0
+#endif
+
+// The key program sets both bus pins' directions with one immediate.
+#if PIN_DM == PIN_DP + 1
+#define KEY_PROGRAM usb_key_pp_program
+#define KEY_CONFIG usb_key_pp_program_get_default_config
+#elif PIN_DM == PIN_DP + 2
+#define KEY_PROGRAM usb_key_pp_gap_program
+#define KEY_CONFIG usb_key_pp_gap_program_get_default_config
+#else
+#error "PIN_DM must be one or two pins above PIN_DP"
+#endif
 
 #define USB_KEY_WORD 0x16EF
 #define PIO_HZ 1000000
@@ -43,9 +63,9 @@ static PIO pio = pio0;
 static uint sm_key, sm_sof, off_key, off_sof;
 
 void rgb(bool r, bool g, bool b) {
-    gpio_put(LED_R, !r);
-    gpio_put(LED_G, !g);
-    gpio_put(LED_B, !b);
+    gpio_put(LED_R, LED_ON ? r : !r);
+    gpio_put(LED_G, LED_ON ? g : !g);
+    gpio_put(LED_B, LED_ON ? b : !b);
 }
 
 static void pad_setup(uint pin, enum gpio_drive_strength ds) {
@@ -58,7 +78,9 @@ void recovery_release_bus(void) {
     pio_sm_set_enabled(pio, sm_key, false);
     pio_sm_set_enabled(pio, sm_sof, false);
 
-    for (uint pin = PIN_DP; pin <= PIN_DM; pin++) {
+    const uint pins[] = {PIN_DP, PIN_DM};
+    for (uint i = 0; i < 2; i++) {
+        uint pin = pins[i];
         gpio_set_function(pin, GPIO_FUNC_SIO);
         gpio_set_dir(pin, GPIO_IN);
         gpio_put(pin, 0);
@@ -86,8 +108,8 @@ static bool probe_high(uint pin) {
 static void key_start(void) {
     pio_sm_set_enabled(pio, sm_key, false);
 
-    pio_sm_config c = usb_key_pp_program_get_default_config(off_key);
-    sm_config_set_set_pins(&c, PIN_DP, 2);
+    pio_sm_config c = KEY_CONFIG(off_key);
+    sm_config_set_set_pins(&c, PIN_DP, PIN_DM - PIN_DP + 1);
     sm_config_set_out_pins(&c, PIN_DM, 1);
     sm_config_set_sideset_pins(&c, PIN_DP);
     sm_config_set_out_shift(&c, false, false, 32);
@@ -315,7 +337,7 @@ void recovery_init(void) {
     pad_setup(PIN_DP, GPIO_DRIVE_STRENGTH_2MA);
     pad_setup(PIN_DM, GPIO_DRIVE_STRENGTH_2MA);
 
-    off_key = pio_add_program(pio, &usb_key_pp_program);
+    off_key = pio_add_program(pio, &KEY_PROGRAM);
     off_sof = pio_add_program(pio, &sof_pulse_program);
     sm_key = pio_claim_unused_sm(pio, true);
     sm_sof = pio_claim_unused_sm(pio, true);

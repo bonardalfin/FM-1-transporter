@@ -36,8 +36,26 @@ Use a **Seeed XIAO RP2040**. Connect three wires only:
 | Board / ボード | Status / 対応 |
 |---|---|
 | Seeed XIAO RP2040 | ✅ Recommended / 推奨 |
+| Raspberry Pi Debug Probe | ✅ Works (see below) / 動作確認済み（下記参照） |
 | Other RP2040 boards / その他の RP2040 ボード | ⚠️ Untested / 未検証 |
 | Waveshare RP2350-USB-A | ❌ Not supported / 非対応 |
+
+### Raspberry Pi Debug Probe
+
+The Debug Probe works too, through its **UART** connector and the cable that comes with it:
+Debug Probe も、付属ケーブルで **UART** コネクタから接続すれば使えます。
+
+| Debug Probe UART | FM-1 USB |
+|---|---|
+| TX, orange (GP4) / TX・オレンジ | D+ |
+| RX, yellow (GP6) / RX・黄 | D- |
+| GND, black / GND・黒 | GND |
+
+A USB-C breakout board with a plug on one side is the easiest way to reach the FM-1's D+ and D-. Use the row of pins the D+ / D- labels belong to.
+FM-1 の D+ / D- には、片側がオスの USB-C ブレイクアウト基板を使うと簡単です。D+ / D- の表示がある列のピンを使ってください。
+
+Build it with `-DFM1T_BOARD=debugprobe -DPICO_BOARD=pico`. The probe's RX line reaches GP6 through a 100 Ω resistor, and GP5 only reads it through a buffer, so D- has to be GP6, two pins above D+. Pico-PIO-USB expects D+ and D- side by side, so this board applies `lib/pico-pio-usb-debugprobe.patch`: three side-set pins with the middle one never enabled, and half the PIO clock so the delays still fit.
+ビルド時に `-DFM1T_BOARD=debugprobe -DPICO_BOARD=pico` を指定します。RX 線は 100 Ω 経由で GP6 につながっていて、GP5 はバッファ越しに読むだけなので、D- は D+ の 2 つ上の GP6 になります。Pico-PIO-USB は D+ と D- が隣り合っている前提なので、このボードでは `lib/pico-pio-usb-debugprobe.patch` を当てます。
 
 The Waveshare RP2350-USB-A doesn't work because RP2350 rev A2 has the GPIO pull-down erratum (E9), D+ has a 1.5 kΩ pull-up, and the USB-A port always outputs VBUS.
 RP2350-USB-A は、RP2350 A2 の GPIO プルダウン不具合（E9）、D+ の 1.5 kΩ プルアップ、常時出力される VBUS のため使えません。
@@ -53,6 +71,8 @@ git submodule update --init
 ```bash
 cmake -S . -B build -DPICO_SDK_PATH=$HOME/pico-sdk -DPICO_BOARD=seeed_xiao_rp2040 -DFM1T_LOADER_BIN=/path/to/wl82loader.bin
 ```
+For the Debug Probe, replace `-DPICO_BOARD=seeed_xiao_rp2040` with `-DFM1T_BOARD=debugprobe -DPICO_BOARD=pico`.
+Debug Probe の場合は `-DPICO_BOARD=seeed_xiao_rp2040` の代わりに `-DFM1T_BOARD=debugprobe -DPICO_BOARD=pico` を指定します。
 ```bash
 make -C build -j8
 ```

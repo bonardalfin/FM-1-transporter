@@ -3,9 +3,17 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#if FM1T_BOARD_DEBUGPROBE
+// Raspberry Pi Debug Probe, UART connector: TX (orange, GP4) -> FM-1 D+,
+// RX (yellow) -> FM-1 D-, GND (black) -> GND. RX reaches GP6 through 100R;
+// GP5 only reads it through a buffer and cannot drive it, so D- is GP6.
+#define PIN_DP 4
+#define PIN_DM 6
+#else
 // Seeed XIAO RP2040: GP0/D6 -> FM-1 D+, GP1/D7 -> FM-1 D-, GND -> GND.
 #define PIN_DP 0
 #define PIN_DM 1
+#endif
 
 // Claims PIO0 state machines and leaves the target bus released.
 void recovery_init(void);

@@ -19,6 +19,32 @@ if (NOT FM1T_PATCH_RESULT EQUAL 0)
 endif()
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${FM1T_PIO_USB_PATCH})
 
+# Which board drives the FM-1: xiao (Seeed XIAO RP2040, GP0 = D+, GP1 = D-) or
+# debugprobe (Raspberry Pi Debug Probe, UART connector: GP4 = D+, GP6 = D-).
+# On the Debug Probe D- is two pins above D+, which Pico-PIO-USB does not
+# support, so lib/pico-pio-usb-debugprobe.patch teaches it that, and the
+# headers it ships are removed so the ones generated from the patched .pio
+# files are used.
+set(FM1T_BOARD xiao CACHE STRING "Board: xiao or debugprobe")
+set_property(CACHE FM1T_BOARD PROPERTY STRINGS xiao debugprobe)
+if (FM1T_BOARD STREQUAL "debugprobe")
+    set(FM1T_PROBE_PATCH ${CMAKE_CURRENT_LIST_DIR}/lib/pico-pio-usb-debugprobe.patch)
+    execute_process(
+        COMMAND patch -p1 --forward --quiet -i ${FM1T_PROBE_PATCH}
+        WORKING_DIRECTORY ${PICO_PIO_USB_PATH}
+        RESULT_VARIABLE FM1T_PATCH_RESULT)
+    if (NOT FM1T_PATCH_RESULT EQUAL 0)
+        message(FATAL_ERROR "Applying ${FM1T_PROBE_PATCH} failed")
+    endif()
+    file(REMOVE ${PICO_PIO_USB_PATH}/src/usb_tx.pio.h ${PICO_PIO_USB_PATH}/src/usb_rx.pio.h)
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${FM1T_PROBE_PATCH})
+    set(FM1T_BOARD_DEBUGPROBE 1)
+elseif (FM1T_BOARD STREQUAL "xiao")
+    set(FM1T_BOARD_DEBUGPROBE 0)
+else()
+    message(FATAL_ERROR "FM1T_BOARD must be xiao or debugprobe, not ${FM1T_BOARD}")
+endif()
+
 # TinyUSB debug level (CFG_TUSB_DEBUG). 2 logs host enumeration during M0.
 set(LOG 2)
 
@@ -66,7 +92,8 @@ function(fm1t_add_firmware TARGET)
 
     # tusb_config.h, generated wl82loader.h
     target_include_directories(${TARGET} PRIVATE ${CMAKE_CURRENT_LIST_DIR}/src ${FM1T_GEN_DIR})
-    target_compile_definitions(${TARGET} PRIVATE FM1T_HAVE_LOADER=${FM1T_HAVE_LOADER})
+    target_compile_definitions(${TARGET} PRIVATE FM1T_HAVE_LOADER=${FM1T_HAVE_LOADER}
+        FM1T_BOARD_DEBUGPROBE=${FM1T_BOARD_DEBUGPROBE})
 
     target_link_libraries(${TARGET}
         pico_stdlib
