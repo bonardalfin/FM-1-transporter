@@ -18,13 +18,17 @@ jobs:
       - run: git clone --depth 1 --branch 2.2.0 --recurse-submodules --shallow-submodules https://github.com/raspberrypi/pico-sdk $HOME/pico-sdk
       - name: Build
         run: |
-          cmake -S . -B build-xiao -DPICO_SDK_PATH=$HOME/pico-sdk -DPICO_BOARD=seeed_xiao_rp2040
-          cmake -S . -B build-probe -DPICO_SDK_PATH=$HOME/pico-sdk -DPICO_BOARD=pico -DFM1T_BOARD=debugprobe
-          make -C build-xiao -j4 fm1_transporter
-          make -C build-probe -j4 fm1_transporter
-          mkdir dist
-          cp build-xiao/fm1_transporter.uf2 dist/fm1_transporter_xiao_rp2040.uf2
-          cp build-probe/fm1_transporter.uf2 dist/fm1_transporter_debugprobe.uf2
+          build() {  # name, cmake args...
+            n=$1; shift
+            cmake -S . -B build-$n -DPICO_SDK_PATH=$HOME/pico-sdk "$@"
+            make -C build-$n -j4 fm1_transporter
+            mkdir -p dist
+            cp build-$n/fm1_transporter.uf2 dist/fm1_transporter_$n.uf2
+          }
+          build xiao_rp2040 -DPICO_BOARD=seeed_xiao_rp2040
+          build pico -DPICO_BOARD=pico
+          build pico2 -DPICO_BOARD=pico2
+          build debugprobe -DPICO_BOARD=pico -DFM1T_BOARD=debugprobe
       - uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/')
         with:

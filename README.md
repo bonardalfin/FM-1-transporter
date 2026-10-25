@@ -37,6 +37,9 @@ Use a **Seeed XIAO RP2040**. Connect three wires only:
 |---|---|
 | Seeed XIAO RP2040 | ✅ Recommended / 推奨 |
 | Raspberry Pi Debug Probe | ✅ Works (see below) / 動作確認済み（下記参照） |
+| Raspberry Pi Debug Probe | ✅ Tested (PR) / 動作確認済み（`FM1T_BOARD=debugprobe`） |
+| Raspberry Pi Pico (RP2040), same pins GP0/GP1 / 同じピン配置 | ⚠️ Builds, untested / ビルドのみ・未検証 |
+| Raspberry Pi Pico 2 (RP2350), same pins GP0/GP1 / 同じピン配置 | ⚠️ Builds, untested; may need external 15 kΩ pull-downs on D+/D- (E9) / ビルドのみ・未検証。D+/D- に外付け 15 kΩ プルダウンが必要な場合あり（E9） |
 | Other RP2040 boards / その他の RP2040 ボード | ⚠️ Untested / 未検証 |
 | Waveshare RP2350-USB-A | ❌ Not supported / 非対応 |
 
