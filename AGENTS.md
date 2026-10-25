@@ -1,30 +1,35 @@
 # AGENTS.md
 
-Firmware (RP2040/RP2350, Pico SDK) and tools to read and write the flash of an M-VAVE FM-1 (JieLi AC791N / WL82) through PIO USB host. See `README.md`, `docs/ARCHITECTURE.md`, `docs/PROTOCOL.md`.
+For agents operating an FM-1 Transporter on the user's behalf. Not a development guide.
 
-## Layout
+The Transporter is a board wired to an M-VAVE FM-1's USB lines. You talk to it through `tools/fm1t.py` (needs pyserial). Details: `README.md`, `docs/PROTOCOL.md`.
 
-- `src/`: firmware. Core 1 runs the PIO USB host and JieLi protocol, core 0 the Mac-facing CDC.
-- `pio/usb_key.pio`: USB_KEY entry sequence.
-- `lib/`: Pico-PIO-USB submodule plus patches applied to a copy at configure time. Do not edit the submodule.
-- `tools/fm1t.py`: CLI client. `web/index.html`: Web Serial client. Both speak the text protocol in `src/transporter_proto.h`.
+## Before anything
 
-## Build
+- Ask the user to confirm the wiring is done and the FM-1 is the target. You cannot check either.
+- You need `wl82loader.bin` (jl-uboot-tool). Pass it as `--loader PATH` or `FM1T_LOADER`. Never commit or publish it.
+- Run `fm1t.py status` first. Fields: `uboot` (FM-1 in boot mode), `v15` (stock V15 running), `loader` (loader uploaded).
+
+## Getting into boot mode
+
+- Stock V15 running: `fm1t.py uboot` (automatic for `info`/`dump`/`write`).
+- No working firmware: `fm1t.py rekey`, then ask the user to power the FM-1 off and on. You cannot do this.
+- After the work: `fm1t.py runapp`, or ask the user to power-cycle the FM-1.
+
+## Commands
 
 ```bash
-git submodule update --init
-cmake -S . -B build -DPICO_SDK_PATH=$HOME/pico-sdk -DPICO_BOARD=seeed_xiao_rp2040
-make -C build -j8 fm1_transporter
+python3 tools/fm1t.py --loader L info                # expect key=980F, id=856014; stop otherwise
+python3 tools/fm1t.py --loader L dump backup.bin     # full 1 MiB read; keep this file
+python3 tools/fm1t.py --loader L write --package P.fwsc --ref backup.bin          # dry run
+python3 tools/fm1t.py --loader L write --package P.fwsc --ref backup.bin --write  # writes
 ```
-
-`PICO_BOARD=pico` or `pico2` uses the same pins (D+ GP0, D- GP1). Debug Probe: `-DFM1T_BOARD=debugprobe -DPICO_BOARD=pico`. Releases are built by `.github/workflows/release.yml` on `v*` tags. Builds must stay warning-free.
 
 ## Rules
 
-- Never commit `wl82loader.bin` or embed it in firmware or releases. It is uploaded at run time (`ldr` command, `fm1t.py --loader`).
-- Flash writes are limited to whole 4 KiB sectors in `[0x4000, 0x93000)`, enforced in firmware. Do not widen this, and add no block or chip erase.
-- Changes to writing must keep: backup first, only changed sectors, per-sector read-back, final full read.
-- No hardware is available in CI or agent sessions. State what was and was not tested on real hardware.
-- Protocol changes: update `src/transporter_proto.h`, `docs/PROTOCOL.md`, `tools/fm1t.py` and `web/index.html` together.
-- Keep comments and docs short. Docs in English; README stays bilingual.
-- Commit with the user's own identity. No AI attribution, no Co-authored-by trailers.
+- Always `dump` before any write, and keep the dump.
+- Always run the dry run first and show the user its result. Run `--write` only after the user says so for that package.
+- Writes cover `0x4000`–`0x93000` only; the firmware refuses anything else. Do not try to work around it.
+- If a write or verify fails, do not power-cycle or retry blindly. Report the exact output and tell the user not to power the FM-1 off.
+- `write` needs the `fm-1-research-lab` checkout (`FM1_RESEARCH`) for package checks. If missing, say so; do not skip the checks.
+- If `info` does not return `key=980F` and `id=856014`, it is not an FM-1. Stop.
