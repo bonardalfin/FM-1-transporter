@@ -1,109 +1,39 @@
-# JieLi WL82 UBOOT protocol (FM-1)
+# JieLi WL82 UBOOT protocol
 
-Hardware-verified by fm-1-research-lab (2026-09-30 / 2026-10-01). Reference
-implementations there: `tools/fm1_uboot_restore.py`, `tools/fm1_ramrun.py`
-(on jl-uboot-tool plus the pyusb BOT port in
-`tools/patches/jl-uboot-tool-macos.patch`).
+Verified on the FM-1 with fm-1-research-lab.
 
 ## Entry
 
-- USB_KEY `0x16EF`, MSB first, **polarity A only** (D+ = clock, D- = data).
-  Polarity B never worked. If an "ACK" is followed by D- going high instead
-  of D+, the D+/D- wires are swapped.
-- After the ACK the ROM pulls D+ up within ~2 ms and holds it while 1 ms
-  pulses arrive. It did not release D+ in 6 s of pulses.
-- If the pulses stop before a host takes over, the ROM gives up and boots
-  flash. The host must take over while, or right after, the pulses run.
-- A "false ACK, D+=0 D-=0" right at power-on is a harmless power-up
-  transient; keying resumes.
-- Alternative entry on stock V15: USB-MIDI SysEx `F0 22 24 35 7D F7` enters
-  the same ROM UBOOT1.00 (`tools/fm1_softkey.py`). It fails if another
-  full-speed device shares the hub.
+- USB_KEY `0x16EF`, MSB first, D+ = clock and D- = data. Only this polarity works.
+- After the ACK the ROM pulls D+ high. Send 1 ms pulses until a host takes over.
+- The ROM accepts the key at power-on and after a watchdog reset.
+- Stock V15 also enters UBOOT on the USB-MIDI packet `04 F0 22 24 07 35 7D F7`.
 
 ## Device
 
-- VID `4C4A`, PID `8057`, product string `WL80UBOOT1.00`, full speed.
-- Mass Storage, Bulk-Only Transport. Endpoint numbers: read them from the
-  descriptor (M0 logs them).
-- SCSI INQUIRY (36 B): vendor `WL82`, product `UBOOT1.00`, rev `1.00`.
-- It waits indefinitely while idle. A JUMP target that does not return within
-  ~2-4 s resets the chip. When the host drops the device it resets and boots
-  flash, so dump + compare + write must happen in **one** session.
-- ROM P33 helper calls (e.g. `0xFFC00F2E`) crash from inside UBOOT.
+UBOOT shows up as `4C4A:8057` "WL80UBOOT1.00": USB Mass Storage, Bulk-Only Transport.
 
-## Command framing
+Each command is a 16-byte CDB: `cmd` (u16, big-endian) followed by its arguments, padded with `0xFF`.
 
-Standard CBW/CSW. The 16-byte CDB is `cmd` (u16 BE) + args, padded with
-`0xFF`. Three shapes:
-
-| shape | data phase | notes |
+| cmd | Name | Stage |
 |---|---|---|
-| cmd_exec | IN, 16 B | `resp[0:2]` echoes cmd (BE); payload = `resp[2:]` |
-| datain | IN, N B | |
-| dataout | OUT, N B | |
+| `FB06` | WRITE_MEMORY | ROM |
+| `FD07` | READ_MEMORY | ROM |
+| `FB08` | JUMP | ROM |
+| `FC09` | READ_KEY (expect `980F`) | loader |
+| `FC0A` | GET_ONLINE_DEVICE (expect `856014`) | loader |
+| `FD05` | READ_FLASH | loader |
+| `FB01` | ERASE_SECTOR (4 KiB) | loader |
+| `FB04` | WRITE_FLASH | loader |
 
-CSW: `USBS`, same tag, status 0.
+- Upload `wl82loader.bin` to `0x1C02000`, then send `JUMP(0x1C02000, 1)`.
+- In the ROM stage, memory data is XORed with `jl_crc_cipher`. Flash data through the loader is not ciphered.
+- The ROM runs a 4 s watchdog. The loader resets the chip after about 3 s without a command.
 
-`crc16` below is CRC-16/XMODEM (poly `0x1021`, init 0, no reflection).
+## Flash layout (1 MiB)
 
-### ROM UBOOT1.00
-
-| cmd | name | shape | args |
-|---|---|---|---|
-| `FB06` | WRITE_MEMORY | dataout | addr u32 BE, len u16 BE, `00`, crc16(data) u16 LE |
-| `FD07` | READ_MEMORY | datain | addr u32 BE, len u16 BE |
-| `FB08` | JUMP | cmd_exec | addr u32 BE, arg u16 BE |
-
-**WL82 quirk:** every memory write/read through UBOOT1.00 is XORed with
-`jl_crc_cipher`, per transfer, in 512-byte blocks, key `0xFFFFFFFF`:
-
-```
-crc = crc16(bytes([0xFF, 0xFF]), init=0xFFFF)
-for i in range(n):
-    crc = crc16(magic[i % len(magic)], init=crc)
-    buf[i] ^= crc & 0xFF
-```
-
-`magic` is a fixed 16-byte GB2312 string; see jl-uboot-tool
-`jltech/cipher.py` and `crc.py`.
-
-`wl82loader.bin` (24064 B, jl-uboot-tool
-`data/loaderblobs/usb/wl82loader.bin`) is shipped **already ciphered**: send
-it raw in 512-byte WRITE_MEMORY blocks to `0x1C02000`, then
-`JUMP(0x1C02000, 0x0001)`. Our own RAM payloads must be ciphered per
-512-byte block before writing, and data read back must be deciphered.
-
-### Loader (LoaderV2), after the jump
-
-Flash data is **not** ciphered.
-
-| cmd | name | shape | args / result |
-|---|---|---|---|
-| `FC09` | READ_KEY | cmd_exec | arg `0x00AC6900` u32 BE; key = jl_crc_cipher(reverse(payload[4:6])) as u16 LE, expect `0x980F` |
-| `FC0A` | GET_ONLINE_DEVICE | cmd_exec | type = payload[0] (expect 3), id = payload[2:6] LE (expect `0x856014`, 1 MiB SPI NOR) |
-| `FD05` | READ_FLASH | datain | addr u32 BE, len u16 BE; 512 B reads, 1 MiB in ~1.5 s from a Mac |
-| `FB01` | ERASE_SECTOR (4 KiB) | cmd_exec | addr u32 BE |
-| `FB00` | ERASE_BLOCK (64 KiB) | — | avoid |
-| `FB04` | WRITE_FLASH | dataout | addr u32 BE, len u16 BE, `00`, crc16(data) u16 LE; 512 B chunks |
-
-## Flash layout and write policy
-
-1 MiB SPI NOR.
-
-| range | contents | policy |
+| Range | Contents | Writes |
 |---|---|---|
-| `[0, 0x4000)` | flash header, SPL `uboot.boot` (UBOOT2.00), isd_config | never write |
-| `[0x4000, 0x93000)` | application | writable; the `.fwsc` type-0 "flash" entry (602112 B) is byte-identical to raw flash from 0 |
-| `[0x93000, end)` | VM / BTIF / USR device data | preserve |
-
-Write sequence used by fm-1-research-lab, to be mirrored by `fm1t`:
-
-1. Read all of flash.
-2. Require the package region to equal the caller's reference.
-3. Erase + write only the differing 4 KiB sectors.
-4. Read each written sector back.
-5. Final full read must equal the expected image.
-
-Packages are refused unless they are stock V15 (sha256 `db1642b2…`) or carry a
-PASSED manifest (`fm1_hookcheck.verify_manifest`). Known-bad hashes:
-`tools/fm1_ota.py` `KNOWN_BAD`.
+| `0x0`–`0x4000` | header, SPL, isd_config | never |
+| `0x4000`–`0x93000` | application | allowed |
+| `0x93000`– | device data | never |
