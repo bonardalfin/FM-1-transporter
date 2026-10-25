@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>FM-1 Transporter</title>
+<style>
+:root{--bg:#f6f6f4;--fg:#1c1c1c;--mut:#8a8a85;--card:#fff;--line:#e3e3df;--acc:#1c1c1c;--ok:#2e8b57;--err:#c0392b}
+@media(prefers-color-scheme:dark){:root{--bg:#141414;--fg:#eee;--mut:#8d8d88;--card:#1d1d1d;--line:#2b2b2b;--acc:#eee;--ok:#5cc08a;--err:#e5736a}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 system-ui,sans-serif;display:flex;justify-content:center;padding:40px 16px}
+main{width:100%;max-width:460px}
+h1{font-size:18px;font-weight:600;margin:0 0 24px;letter-spacing:.02em}
+.step{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px 18px;margin-bottom:10px;opacity:.45}
+.step.on{opacity:1}.step.done{opacity:1}
+.head{display:flex;align-items:center;gap:12px;font-weight:600}
+.n{width:24px;height:24px;border-radius:50%;border:1.5px solid var(--mut);display:grid;place-items:center;font-size:12px;color:var(--mut);flex:none}
+.on .n{border-color:var(--acc);color:var(--acc)}
+.done .n{background:var(--ok);border-color:var(--ok);color:#fff}
+.body{display:none;margin:12px 0 0 36px}
+.on .body{display:block}
+.msg{color:var(--mut);margin:0 0 12px;font-size:14px}
+button,label.b{display:inline-block;background:var(--acc);color:var(--bg);border:0;border-radius:8px;padding:8px 16px;font:inherit;cursor:pointer}
+button:disabled{opacity:.4;cursor:default}
+button.s{background:none;color:var(--fg);border:1px solid var(--line)}
+input[type=file]{display:none}
+progress{width:100%;height:6px;margin-top:12px;accent-color:var(--acc)}
+.st{margin-top:10px;font-size:13px;color:var(--mut);word-break:break-all}
+.st.ok{color:var(--ok)}.st.err{color:var(--err)}
+</style>
+</head>
+<body>
+<main>
+<h1>FM-1 Transporter</h1>
+
+<section class="step on" id="s1"><div class="head"><span class="n">1</span>Connect</div><div class="body">
+<p class="msg">Plug in the Transporter, then pick its second serial port.</p>
+<button id="connect">Connect</button><div class="st"></div></div></section>
+
+<section class="step" id="s2"><div class="head"><span class="n">2</span>Loader</div><div class="body">
+<p class="msg">Choose <code>wl82loader.bin</code> (jl-uboot-tool). It stays in your browser and the Transporter's RAM.</p>
+<label class="b">Choose file<input type="file" id="loader"></label><div class="st"></div></div></section>
+
+<section class="step" id="s3"><div class="head"><span class="n">3</span>FM-1</div><div class="body">
+<p class="msg">Power the FM-1 on. Stock V15 enters boot mode by itself. A black-screen unit: switch it off, press Reconnect, then switch it on.</p>
+<button id="info">Check</button> <button class="s" id="rekey">Reconnect</button><div class="st"></div></div></section>
+
+<section class="step" id="s4"><div class="head"><span class="n">4</span>Backup</div><div class="body">
+<p class="msg">Reads the whole flash twice and saves it.</p>
+<button id="dump">Back up</button><progress value="0" max="1" hidden></progress><div class="st"></div></div></section>
+
+<section class="step" id="s5"><div class="head"><span class="n">5</span>Write</div><div class="body">
+<p class="msg">Choose a full flash image. Only changed sectors in 0x4000–0x92FFF are written and verified.</p>
+<label class="b">Choose image<input type="file" id="image"></label> <button id="write" disabled>Write</button>
+<progress value="0" max="1" hidden></progress><div class="st"></div></div></section>
+</main>
+
+<script>
+const FLASH=0x100000, LO=0x4000, HI=0x93000, SEC=4096;
+const $=id=>document.getElementById(id), enc=new TextEncoder(), dec=new TextDecoder();
+let port, writer, buf=new Uint8Array(0), backup=null, image=null;
+
+const crcT=new Uint32Array(256).map((_,i)=>{let c=i;for(let k=0;k<8;k++)c=c&1?0xEDB88320^(c>>>1):c>>>1;return c>>>0});
+const crc32=d=>{let c=~0;for(const b of d)c=crcT[(c^b)&255]^(c>>>8);return(~c)>>>0};
+const hex=n=>n.toString(16).toUpperCase().padStart(8,'0');
+
+function say(s,t,cls=''){const e=$(s).querySelector('.st');e.textContent=t;e.className='st '+cls}
+function go(s){$(s).classList.add('done');$(s).classList.remove('on');const n=$(s).nextElementSibling;if(n)n.classList.add('on')}
+function bar(s,v,max){const p=$(s).querySelector('progress');p.hidden=false;p.max=max;p.value=v}
+
+async function pump(){
+  const r=port.readable.getReader();
+  for(;;){const{value,done}=await r.read();if(done)break;const m=new Uint8Array(buf.length+value.length);m.set(buf);m.set(value,buf.length);buf=m}
+}
+async function take(n,ms=30000){
+  const end=Date.now()+ms;
+  while(buf.length<n){if(Date.now()>end)throw Error('timeout');await new Promise(r=>setTimeout(r,2))}
+  const o=buf.slice(0,n);buf=buf.slice(n);return o;
+}
+async function line(ms=30000){
+  const end=Date.now()+ms;
+  for(;;){const i=buf.indexOf(10);if(i>=0){const l=dec.decode(buf.slice(0,i)).trim();buf=buf.slice(i+1);return l}
+    if(Date.now()>end)throw Error('timeout');await new Promise(r=>setTimeout(r,2))}
+}
+const send=async b=>{buf=new Uint8Array(0);await writer.write(b)};
+async function req(l,ms){await send(enc.encode(l+'\n'));return line(ms)}
+function cat(a,b){const o=new Uint8Array(a.length+b.length);o.set(a);o.set(b,a.length);return o}
+
+async function readFlash(addr,len,prog){
+  const h=await req(`read 0x${addr.toString(16)} ${len}`);
+  if(!h.startsWith('DATA '))throw Error(h);
+  const out=new Uint8Array(len);
+  for(let o=0;o<len;){const n=Math.min(65536,len-o);out.set(await take(n),o);o+=n;prog&&prog(o)}
+  const e=await line();
+  if(e!=='END '+hex(crc32(out)))throw Error('read check failed: '+e);
+  return out;
+}
+const same=(a,b)=>a.length===b.length&&a.every((v,i)=>v===b[i]);
+
+$('connect').onclick=async()=>{
+  try{
+    port=await navigator.serial.requestPort();
+    await port.open({baudRate:115200});
+    writer=port.writable.getWriter();pump();
+    if(await req('ping',1500)!=='PONG')throw Error('no reply');
+    say('s1','Connected','ok');go('s1');
+  }catch(e){
+    try{await writer?.releaseLock();await port?.close()}catch{}
+    say('s1',(e.message==='timeout'?'Wrong port, pick the other one':e.message),'err');
+  }
+};
+
+$('loader').onchange=async e=>{
+  try{
+    const d=new Uint8Array(await e.target.files[0].arrayBuffer());
+    if(d.length!==24064)throw Error(`Expected 24064 bytes, got ${d.length}`);
+    for(let o=0;o<d.length;o+=SEC){
+      const c=d.slice(o,o+SEC);
+      await send(cat(enc.encode(`ldr ${o} ${c.length} ${hex(crc32(c))}\n`),c));
+      const r=await line(5000);if(r!=='OK')throw Error(r);
+    }
+    say('s2','Loaded','ok');go('s2');
+  }catch(x){say('s2',x.message,'err')}
+};
+
+async function check(){
+  const st=await req('status');
+  if(!/uboot=1/.test(st)){
+    const r=await req('uboot');
+    if(!r.startsWith('OK'))throw Error('Not in boot mode ('+r+')');
+    for(let i=0;i<40&&!/uboot=1/.test(await req('status'));i++)await new Promise(r=>setTimeout(r,500));
+  }
+  const i=await req('info');
+  if(!i.startsWith('OK'))throw Error(i);
+  if(!/key=980F/.test(i)||!/id=856014/.test(i))throw Error('Not an FM-1: '+i);
+  return i;
+}
+$('info').onclick=async()=>{
+  try{say('s3','Checking…');const i=await check();say('s3',i.slice(3),'ok');go('s3')}
+  catch(e){say('s3',e.message,'err')}
+};
+$('rekey').onclick=async()=>{
+  try{await req('rekey',3000)}catch{}
+  say('s3','Rebooting. Select the port again, then switch the FM-1 on.');
+  try{await writer.releaseLock();await port.close()}catch{}
+  $('s1').classList.replace('done','on');$('s2').classList.remove('on','done');$('s3').classList.remove('on','done');
+};
+
+$('dump').onclick=async()=>{
+  try{
+    $('dump').disabled=true;
+    const a=await readFlash(0,FLASH,o=>bar('s4',o,FLASH*2));
+    const b=await readFlash(0,FLASH,o=>bar('s4',FLASH+o,FLASH*2));
+    if(!same(a,b))throw Error('The two reads differ. Check the wiring and retry.');
+    backup=a;
+    const l=document.createElement('a');
+    l.href=URL.createObjectURL(new Blob([a]));
+    l.download=`fm1-backup-${new Date().toISOString().replace(/[:.]/g,'-')}.bin`;l.click();
+    say('s4',`Saved ${l.download}`,'ok');go('s4');
+  }catch(e){say('s4',e.message,'err');$('dump').disabled=false}
+};
+
+$('image').onchange=async e=>{
+  const d=new Uint8Array(await e.target.files[0].arrayBuffer());
+  if(d.length<HI){say('s5',`Image is ${d.length} bytes, need at least ${HI}`,'err');return}
+  image=d;$('write').disabled=false;say('s5',e.target.files[0].name);
+};
+$('write').onclick=async()=>{
+  try{
+    $('write').disabled=true;
+    const now=await readFlash(0,FLASH);
+    if(!same(now,backup))throw Error('Flash changed since the backup. Back up again.');
+    const todo=[];
+    for(let a=LO;a<HI;a+=SEC)if(!same(now.subarray(a,a+SEC),image.subarray(a,a+SEC)))todo.push(a);
+    if(!todo.length){say('s5','Already up to date','ok');go('s5');return}
+    if(!confirm(`Write ${todo.length} sectors?`)){$('write').disabled=false;return}
+    for(const[i,a]of todo.entries()){
+      const c=image.slice(a,a+SEC);
+      await send(cat(enc.encode(`wsec 0x${a.toString(16)} ${hex(crc32(c))}\n`),c));
+      const r=await line(20000);if(r!=='OK')throw Error(`Sector ${a.toString(16)}: ${r}`);
+      bar('s5',i+1,todo.length);
+    }
+    const fin=await readFlash(0,FLASH);
+    if(!same(fin.subarray(LO,HI),image.subarray(LO,HI)))throw Error('Verify failed. Do not power off; write again.');
+    say('s5','Done. Switch the FM-1 off, wait 5 s, switch it on.','ok');go('s5');
+  }catch(e){say('s5',e.message,'err');$('write').disabled=false}
+};
+
+if(!('serial' in navigator))say('s1','Use Chrome or Edge (Web Serial)','err');
+</script>
+</body>
+</html>
