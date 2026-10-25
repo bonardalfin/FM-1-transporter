@@ -62,14 +62,15 @@ RP2350-USB-A は、RP2350 A2 の GPIO プルダウン不具合（E9）、D+ の 
 
 ## Build / ビルド
 
-You need pico-sdk 2.2.0, an ARM GCC toolchain, CMake and picotool. Get `wl82loader.bin` from [jl-uboot-tool](https://github.com/kagaimiq/jl-uboot-tool). It is not included in this repository.
-pico-sdk 2.2.0、ARM GCC、CMake、picotool が必要です。`wl82loader.bin` は同梱していないので、jl-uboot-tool から用意してください。
+You need pico-sdk 2.2.0, an ARM GCC toolchain, CMake and picotool. Or download a UF2 from Releases.
+`wl82loader.bin` is not part of the firmware or this repository: get it from [jl-uboot-tool](https://github.com/kagaimiq/jl-uboot-tool) and pass it to `fm1t.py --loader` (uploaded to the XIAO's RAM at run time).
+pico-sdk 2.2.0、ARM GCC、CMake、picotool が必要です（Releases の UF2 も使えます）。`wl82loader.bin` はファームウェアにも本リポジトリにも含まれません。jl-uboot-tool から入手し、`fm1t.py --loader` で実行時に RAM へ送ります。
 
 ```bash
 git submodule update --init
 ```
 ```bash
-cmake -S . -B build -DPICO_SDK_PATH=$HOME/pico-sdk -DPICO_BOARD=seeed_xiao_rp2040 -DFM1T_LOADER_BIN=/path/to/wl82loader.bin
+cmake -S . -B build -DPICO_SDK_PATH=$HOME/pico-sdk -DPICO_BOARD=seeed_xiao_rp2040
 ```
 For the Debug Probe, replace `-DPICO_BOARD=seeed_xiao_rp2040` with `-DFM1T_BOARD=debugprobe -DPICO_BOARD=pico`.
 Debug Probe の場合は `-DPICO_BOARD=seeed_xiao_rp2040` の代わりに `-DFM1T_BOARD=debugprobe -DPICO_BOARD=pico` を指定します。

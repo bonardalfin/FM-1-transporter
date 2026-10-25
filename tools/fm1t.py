@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """fm1t - Mac-side client for the FM-1 Transporter data channel.
 
-    fm1t.py status
+    fm1t.py [--loader wl82loader.bin] status
     fm1t.py uboot          (stock V15 -> UBOOT via the USB-MIDI soft key)
     fm1t.py rekey          (reboot the transporter into USB_KEY mode)
     fm1t.py runapp         (leave UBOOT and boot the installed firmware)
@@ -70,6 +70,23 @@ def request(s, line, timeout=30):
     if not reply:
         sys.exit(f"fm1t: no reply to '{line}'")
     return reply
+
+
+LOADER_SIZE = 24064
+
+
+def upload_loader(s, path):
+    data = open(path, "rb").read()
+    if len(data) != LOADER_SIZE:
+        sys.exit(f"fm1t: {path} is {len(data)} bytes, expected {LOADER_SIZE}")
+    for off in range(0, len(data), 4096):
+        chunk = data[off:off + 4096]
+        s.reset_input_buffer()
+        s.write(f"ldr {off} {len(chunk)} {zlib.crc32(chunk) & 0xFFFFFFFF:08X}\n".encode() + chunk)
+        s.timeout = 5
+        reply = s.readline().decode(errors="replace").strip()
+        if reply != "OK":
+            sys.exit(f"fm1t: loader upload failed at {off}: {reply or 'no reply'}")
 
 
 def status(s):
@@ -391,6 +408,9 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--port", help="data port (default: probe /dev/cu.usbmodem*)")
+    ap.add_argument("--loader", default=os.environ.get("FM1T_LOADER"),
+                    help="wl82loader.bin from jl-uboot-tool, uploaded to RAM when missing "
+                         "(default: $FM1T_LOADER)")
     sub = ap.add_subparsers(dest="cmd", required=True)
     sub.add_parser("status")
     sub.add_parser("uboot")
@@ -420,6 +440,8 @@ def main():
     args = ap.parse_args()
 
     s = find_port(args.port)
+    if args.loader and status(s)["loader"] != "1":
+        upload_loader(s, args.loader)
     {"status": cmd_status, "uboot": cmd_uboot, "rekey": cmd_rekey, "runapp": cmd_runapp, "info": cmd_info, "dump": cmd_dump, "write": cmd_write,
      "selftest-write": cmd_selftest_write, "ramrun": cmd_ramrun}[args.cmd](s, args)
 

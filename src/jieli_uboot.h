@@ -30,8 +30,13 @@ typedef struct {
 // Forget loader state (call on every new mount).
 void jl_reset(void);
 
-// True if this firmware was built with the loader blob embedded.
+#define JL_LOADER_SIZE 24064    // wl82loader.bin
+
+// True once the host has uploaded the whole loader.
 bool jl_have_loader(void);
+
+// Stores a loader chunk; chunks must arrive in order, starting at off 0.
+bool jl_loader_load(uint32_t off, const uint8_t *data, uint32_t len);
 
 // Uploads wl82loader to RAM and jumps to it, once per mount.
 bool jl_ensure_loader(void);

@@ -16,12 +16,10 @@ jobs:
           submodules: true
       - run: sudo apt-get update && sudo apt-get install -y cmake gcc-arm-none-eabi libnewlib-arm-none-eabi build-essential
       - run: git clone --depth 1 --branch 2.2.0 --recurse-submodules --shallow-submodules https://github.com/raspberrypi/pico-sdk $HOME/pico-sdk
-      - run: git clone --depth 1 https://github.com/kagaimiq/jl-uboot-tool $HOME/jl-uboot-tool
       - name: Build
         run: |
-          LOADER=$HOME/jl-uboot-tool/data/loaderblobs/usb/wl82loader.bin
-          cmake -S . -B build-xiao -DPICO_SDK_PATH=$HOME/pico-sdk -DPICO_BOARD=seeed_xiao_rp2040 -DFM1T_LOADER_BIN=$LOADER
-          cmake -S . -B build-probe -DPICO_SDK_PATH=$HOME/pico-sdk -DPICO_BOARD=pico -DFM1T_BOARD=debugprobe -DFM1T_LOADER_BIN=$LOADER
+          cmake -S . -B build-xiao -DPICO_SDK_PATH=$HOME/pico-sdk -DPICO_BOARD=seeed_xiao_rp2040
+          cmake -S . -B build-probe -DPICO_SDK_PATH=$HOME/pico-sdk -DPICO_BOARD=pico -DFM1T_BOARD=debugprobe
           make -C build-xiao -j4 fm1_transporter
           make -C build-probe -j4 fm1_transporter
           mkdir dist

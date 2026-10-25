@@ -11,10 +11,6 @@
 #include "log.h"
 #include "pio_host.h"
 
-#if FM1T_HAVE_LOADER
-#include "wl82loader.h"     // generated at build time, never committed
-#endif
-
 #define LOADER_ADDR 0x1C02000u
 #define LOADER_ARG 0x0001
 
@@ -33,6 +29,8 @@
 
 #define KEEPALIVE_MS 1000   // the loader resets the chip after ~3 s without a command
 
+static uint8_t loader_buf[JL_LOADER_SIZE];   // uploaded by the host (fm1t.py)
+static uint32_t loader_len;
 static bool loader_running;
 static uint16_t read_chunk = JL_IO_SIZE;
 static uint64_t last_cmd_us;
@@ -46,11 +44,15 @@ void jl_reset(void) {
 }
 
 bool jl_have_loader(void) {
-#if FM1T_HAVE_LOADER
+    return loader_len == JL_LOADER_SIZE;
+}
+
+bool jl_loader_load(uint32_t off, const uint8_t *data, uint32_t len) {
+    if (off == 0) loader_len = 0;
+    if (off != loader_len || len > JL_LOADER_SIZE - off) return false;
+    memcpy(&loader_buf[off], data, len);
+    loader_len += len;
     return true;
-#else
-    return false;
-#endif
 }
 
 // CRC-16/XMODEM (poly 0x1021, no reflection), with caller-supplied init.
@@ -118,18 +120,18 @@ bool jl_ensure_loader(void) {
         dlog("JL: no UBOOT mounted");
         return false;
     }
-#if !FM1T_HAVE_LOADER
-    dlog("JL: firmware built without wl82loader.bin (see FM1T_LOADER_BIN)");
-    return false;
-#else
-    dlog("JL: uploading wl82loader (%u bytes) to %08lX", (unsigned)sizeof(wl82loader),
+    if (!jl_have_loader()) {
+        dlog("JL: wl82loader not uploaded (fm1t.py --loader)");
+        return false;
+    }
+    dlog("JL: uploading wl82loader (%u bytes) to %08lX", (unsigned)JL_LOADER_SIZE,
          (unsigned long)LOADER_ADDR);
 
     // The blob is shipped already ciphered: send it raw, 512 bytes at a time.
-    for (uint32_t off = 0; off < sizeof(wl82loader); off += JL_IO_SIZE) {
-        uint16_t n = (uint16_t)((sizeof(wl82loader) - off) < JL_IO_SIZE
-                                    ? (sizeof(wl82loader) - off) : JL_IO_SIZE);
-        memcpy(block, &wl82loader[off], n);
+    for (uint32_t off = 0; off < JL_LOADER_SIZE; off += JL_IO_SIZE) {
+        uint16_t n = (uint16_t)((JL_LOADER_SIZE - off) < JL_IO_SIZE
+                                    ? (JL_LOADER_SIZE - off) : JL_IO_SIZE);
+        memcpy(block, &loader_buf[off], n);
 
         uint8_t args[9];
         put_be32(args, LOADER_ADDR + off);
@@ -172,7 +174,6 @@ bool jl_ensure_loader(void) {
              read_chunk);
     }
     return true;
-#endif
 }
 
 uint16_t jl_read_chunk(void) {

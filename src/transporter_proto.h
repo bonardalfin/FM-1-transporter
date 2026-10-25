@@ -14,6 +14,8 @@
 //                            USB_KEY mode (for a unit stuck with USB up)
 //   info                  -> OK key=980F type=3 id=856014 | ERR <why>
 //   read <addr> <len>     -> DATA <len>\n <len raw bytes> END <crc32>\n | ERR <why>
+//   ldr <off> <len> <crc32>\n <len raw bytes (<= 4096)>
+//                         -> OK | ERR <why>   (upload wl82loader.bin in order)
 //   wsec <addr> <crc32>\n <4096 raw bytes>
 //                         -> OK | ERR <why>   (erase + write + read-back verify)
 //
