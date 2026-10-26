@@ -16,7 +16,7 @@ FM-1 の USB 信号線につないだ小型ボード（RP2040 / RP2350）を使�
 | Raspberry Pi Debug Probe（UART コネクタ） | TX (GP4) | RX (GP6) | ✅ 動作確認済み |
 | Raspberry Pi Pico | GP0 | GP1 | ⚠️ ビルドのみ、未検証 |
 | Raspberry Pi Pico 2 | GP0 | GP1 | ⚠️ ビルドのみ、未検証。D+/D- に外付け 15 kΩ プルダウンが必要な場合あり（RP2350 E9） |
-| Waveshare RP2350-USB-A | | | ❌ 非対応 |
+| Waveshare RP2350-USB-A / USB-C / USB-CM | GP12 | GP13 | ⚠️ 実験的・非推奨。基板の改造（D+ の 1.5 kΩ プルアップを外す、FM-1 に VBUS を出さない）とファームの移植が必要 |
 
 どのボードも GND 同士をつなぎます。
 

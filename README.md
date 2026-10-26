@@ -16,7 +16,7 @@ Three wires only. **Do not connect VBUS**; the FM-1 runs on its battery.
 | Raspberry Pi Debug Probe (UART connector) | TX (GP4) | RX (GP6) | ✅ Tested |
 | Raspberry Pi Pico | GP0 | GP1 | ⚠️ Builds, untested |
 | Raspberry Pi Pico 2 | GP0 | GP1 | ⚠️ Builds, untested. May need external 15 kΩ pull-downs on D+/D- (RP2350 E9) |
-| Waveshare RP2350-USB-A | | | ❌ Not supported |
+| Waveshare RP2350-USB-A / USB-C / USB-CM | GP12 | GP13 | ⚠️ Experimental, not recommended. Needs board mods (remove the 1.5 kΩ D+ pull-up, keep VBUS off the FM-1) and a firmware port |
 
 All boards: GND to GND.
 
