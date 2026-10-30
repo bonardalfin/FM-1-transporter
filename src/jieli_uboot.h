@@ -18,7 +18,7 @@
 #define JL_IO_SIZE 512          // loader upload and flash write chunk
 #define JL_READ_MAX 4096        // largest READ_FLASH we issue (see jl_read_chunk)
 #define JL_SECTOR_SIZE 0x1000
-#define JL_WRITE_MIN 0x4000
+#define JL_WRITE_MIN 0x0000
 #define JL_WRITE_END 0x93000
 
 typedef struct {
